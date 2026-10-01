@@ -78,11 +78,12 @@ def extract_text_from_pdf(uploaded_file) -> str:
 def run_resume_review(resume_text: str, job_description: str) -> str:
     """Configures CrewAI Agent & Task, and executes evaluation workflow."""
     
-    # Initialize LLM via LiteLLM routing in CrewAI
+    # Configure CrewAI LLM with drop_params to ignore unsupported parameters on Groq
     llm = LLM(
         model="groq/openai/gpt-oss-120b",
         api_key=groq_api_key,
-        temperature=0.2
+        temperature=0.2,
+        drop_params=True  # Automatically removes cache_breakpoint & unsupported Groq params
     )
 
     # 1. Define Agent
