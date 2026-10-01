@@ -1,14 +1,9 @@
 import os
 import streamlit as st
-from pypdf import PdfReader
-from pdf2image import convert_from_bytes
-import pytesseract
 import litellm
+from pypdf import PdfReader
 from crewai import LLM, Agent, Task, Crew, Process
 
-# ==============================================================================
-# LITELLM & GROQ COMPATIBILITY FIXES
-# ==============================================================================
 # Global LiteLLM configuration to drop unsupported backend parameters
 litellm.drop_params = True
 
