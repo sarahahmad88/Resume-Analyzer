@@ -4,19 +4,34 @@ from pypdf import PdfReader
 from crewai import LLM, Agent, Task, Crew, Process
 
 # ==============================================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION & STYLING
 # ==============================================================================
-st.set_page_config(page_title="AI Resume Reviewer", page_icon="📄", layout="wide")
-st.title("📄 AI Resume Review & Optimization Agent")
+st.set_page_config(
+    page_title="AI Resume Reviewer",
+    page_icon="📄",
+    layout="wide"
+)
 
+st.title("📄 AI Resume Review & Optimization Agent")
+st.caption("Powered by CrewAI & Groq (GPT OSS 120B)")
+
+# ==============================================================================
+# SECURE API KEY INITIALIZATION
+# ==============================================================================
 groq_api_key = st.secrets.get("GROQ_API_KEY") if "GROQ_API_KEY" in st.secrets else os.getenv("GROQ_API_KEY")
+
 if not groq_api_key:
-    st.error("🔑 GROQ API Key missing! Check Streamlit secrets.")
+    st.error("🔑 GROQ API Key missing! Please add `GROQ_API_KEY` to `.streamlit/secrets.toml` or Streamlit Cloud Secrets.")
     st.stop()
 
 os.environ["GROQ_API_KEY"] = groq_api_key
 
+
+# ==============================================================================
+# HELPER FUNCTIONS
+# ==============================================================================
 def extract_text_from_pdf(uploaded_file) -> str:
+    """Extracts raw text safely from an uploaded PDF file."""
     try:
         reader = PdfReader(uploaded_file)
         text = ""
@@ -29,86 +44,32 @@ def extract_text_from_pdf(uploaded_file) -> str:
         st.error(f"Failed to extract text from PDF: {str(e)}")
         return ""
 
+
 def run_resume_review(resume_text: str, job_description: str) -> str:
+    """Configures CrewAI Agent & Task, and executes evaluation workflow."""
+    
+    # Initialize LLM via LiteLLM routing in CrewAI
     llm = LLM(
         model="groq/openai/gpt-oss-120b",
         api_key=groq_api_key,
         temperature=0.2
     )
 
+    # 1. Define Agent
     resume_evaluator = Agent(
         role="Senior Executive Technical Recruiter & Resume Auditor",
-        goal="Accurately evaluate resume alignment against job descriptions.",
+        goal="Accurately evaluate resume alignment against job descriptions and provide targeted, zero-hallucination feedback.",
         backstory=(
-            "You are a seasoned recruiter. You never fabricate skills or experiences "
-            "not explicitly present in the candidate's resume."
+            "You are a seasoned talent acquisition strategist with over 15 years of experience evaluating candidate resumes. "
+            "You are meticulous, strictly factual, and honest. You never fabricate skills, certifications, or experiences "
+            "that are not explicitly present in the candidate's provided text. Your advice is concise, structured, and actionable."
         ),
         verbose=False,
         allow_delegation=False,
         llm=llm
     )
 
-    review_task = Task(
-        description=(
-            "Carefully analyze the Candidate Resume against the Target Job Description below.\n\n"
-            "=== CANDIDATE RESUME ===\n{resume}\n\n"
-            "=== TARGET JOB DESCRIPTION ===\n{job_description}\n"
-        ),
-        expected_output="A structured report in Markdown format with scores, matching skills, gaps, and recommendations.",
-        agent=resume_evaluator
-    )
-
-    crew = Crew(agents=[resume_evaluator], tasks=[review_task], process=Process.sequential)
-    return str(crew.kickoff(inputs={"resume": resume_text, "job_description": job_description}))
-
-# ==============================================================================
-# UI INPUT FORM
-# ==============================================================================
-col1, col2 = st.columns(2)
-
-resume_content = ""
-
-with col1:
-    st.subheader("1. Candidate Resume")
-    input_method = st.radio("Choose input method:", ["Upload PDF", "Paste Text"], horizontal=True)
-    
-    if input_method == "Upload PDF":
-        uploaded_pdf = st.file_uploader("Upload PDF Resume", type=["pdf"])
-        if uploaded_pdf is not None:
-            # Extract PDF text synchronously so it persists across reruns
-            resume_content = extract_text_from_pdf(uploaded_pdf)
-            if resume_content:
-                st.success("PDF loaded successfully!")
-                with st.expander("Preview Extracted Resume Text"):
-                    st.text(resume_content[:1000] + "..." if len(resume_content) > 1000 else resume_content)
-            else:
-                st.error("Could not extract any readable text from this PDF. It might be a scanned image or protected.")
-    else:
-        resume_content = st.text_area("Paste Resume Text here:", height=300)
-
-with col2:
-    st.subheader("2. Target Job Description")
-    job_desc_content = st.text_area("Paste Job Description here:", height=350)
-
-st.divider()
-
-if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_width=True):
-    # Validation checks
-    if not resume_content or not resume_content.strip():
-        st.warning("⚠️ Please provide a valid resume (either upload a readable PDF or paste text).")
-    elif not job_desc_content or not job_desc_content.strip():
-        st.warning("⚠️ Please paste the target job description.")
-    else:
-        with st.spinner("🤖 Agent is analyzing your resume..."):
-            try:
-                review_report = run_resume_review(resume_content, job_desc_content)
-                st.subheader("📋 Audit Report")
-                st.markdown(review_report)
-            except Exception as e:
-                st.error(f"Execution error: {str(e)}")
-    )
-
-    # 2. Evaluation Task definition with structured output constraints
+    # 2. Define Evaluation Task
     review_task = Task(
         description=(
             "Carefully analyze the Candidate Resume against the Target Job Description below.\n\n"
@@ -133,7 +94,7 @@ if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_widt
         agent=resume_evaluator
     )
 
-    # 3. Instantiate and execute Crew
+    # 3. Instantiate and run Crew
     crew = Crew(
         agents=[resume_evaluator],
         tasks=[review_task],
@@ -145,24 +106,26 @@ if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_widt
 
 
 # ==============================================================================
-# STREAMLIT USER INTERFACE
+# USER INTERFACE (STREAMLIT)
 # ==============================================================================
 col1, col2 = st.columns(2)
+
+resume_content = ""
 
 with col1:
     st.subheader("1. Candidate Resume")
     input_method = st.radio("Choose input method:", ["Upload PDF", "Paste Text"], horizontal=True)
     
-    resume_content = ""
     if input_method == "Upload PDF":
         uploaded_pdf = st.file_uploader("Upload PDF Resume", type=["pdf"])
-        if uploaded_pdf:
-            with st.spinner("Extracting text from PDF..."):
-                resume_content = extract_text_from_pdf(uploaded_pdf)
-                if resume_content:
-                    st.success("PDF processed successfully!")
-                    with st.expander("Preview Extracted Resume Text"):
-                        st.text(resume_content[:1000] + "..." if len(resume_content) > 1000 else resume_content)
+        if uploaded_pdf is not None:
+            resume_content = extract_text_from_pdf(uploaded_pdf)
+            if resume_content:
+                st.success("PDF loaded successfully!")
+                with st.expander("Preview Extracted Resume Text"):
+                    st.text(resume_content[:1000] + "..." if len(resume_content) > 1000 else resume_content)
+            else:
+                st.error("Could not extract text from this PDF. It might be scanned or image-based.")
     else:
         resume_content = st.text_area("Paste Resume Text here:", height=300)
 
@@ -172,12 +135,11 @@ with col2:
 
 st.divider()
 
-# Analyze Trigger
+# Analyze Button
 if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_width=True):
-    # Validation checks
-    if not resume_content.strip():
-        st.warning("⚠️ Please provide a resume (either upload a valid PDF or paste text).")
-    elif not job_desc_content.strip():
+    if not resume_content or not resume_content.strip():
+        st.warning("⚠️ Please provide a valid resume (either upload a readable PDF or paste text).")
+    elif not job_desc_content or not job_desc_content.strip():
         st.warning("⚠️ Please paste the target job description.")
     else:
         with st.spinner("🤖 Agent is analyzing your resume with GPT OSS 120B..."):
