@@ -5,13 +5,26 @@ import streamlit as st
 import litellm
 from pypdf import PdfReader
 from crewai import LLM, Agent, Task, Crew, Process
+import litellm
 
-# ==============================================================================
-# LITELLM / GROQ COMPATIBILITY SETTINGS
-# ==============================================================================
-# Force LiteLLM to drop any unhandled parameters (like cache_breakpoint) globally
+# Monkey-patch LiteLLM completion to sanitize incoming arguments for Groq
+_original_completion = litellm.completion
+
+def sanitized_completion(*args, **kwargs):
+    # Remove unsupported parameters if present
+    kwargs.pop("cache_breakpoint", None)
+    if "messages" in kwargs:
+        for msg in kwargs["messages"]:
+            if isinstance(msg, dict):
+                msg.pop("cache_breakpoint", None)
+    return _original_completion(*args, **kwargs)
+
+litellm.completion = sanitized_completion
+
+# Force LiteLLM environment settings globally
+os.environ["LITELLM_DROP_PARAMS"] = "True"
 litellm.drop_params = True
-litellm.modify_params = True  # Drops params unsupported by target provider
+litellm.modify_params = True
 
 # Page Config
 st.set_page_config(
@@ -72,11 +85,13 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    # Explicitly configure Groq model via LiteLLM standard naming
+    # Explicitly configure CrewAI LLM with drop_params
     llm = LLM(
-        model="groq/llama-3.3-70b-versatile",  # Clean Groq native model string
+        model="groq/llama-3.3-70b-versatile",
         api_key=groq_api_key,
         temperature=0.2,
+        drop_params=True,
+        cache=False  # Disables prompt caching that injects 'cache_breakpoint'
     )
 
     resume_evaluator = Agent(
