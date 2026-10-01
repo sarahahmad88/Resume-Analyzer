@@ -4,36 +4,19 @@ from pypdf import PdfReader
 from crewai import LLM, Agent, Task, Crew, Process
 
 # ==============================================================================
-# PAGE CONFIGURATION & STYLING
+# PAGE CONFIG
 # ==============================================================================
-st.set_page_config(
-    page_title="AI Resume Reviewer",
-    page_icon="📄",
-    layout="wide"
-)
-
+st.set_page_config(page_title="AI Resume Reviewer", page_icon="📄", layout="wide")
 st.title("📄 AI Resume Review & Optimization Agent")
-st.caption("Powered by CrewAI & Groq (openai/gpt-oss-120b)")
 
-# ==============================================================================
-# SECURE API KEY INITIALIZATION
-# ==============================================================================
-# Retrieve key safely from Streamlit secrets or local environment variables
 groq_api_key = st.secrets.get("GROQ_API_KEY") if "GROQ_API_KEY" in st.secrets else os.getenv("GROQ_API_KEY")
-
 if not groq_api_key:
-    st.error("🔑 GROQ API Key missing! Please add `GROQ_API_KEY` to `.streamlit/secrets.toml` or Streamlit Cloud Secrets.")
+    st.error("🔑 GROQ API Key missing! Check Streamlit secrets.")
     st.stop()
 
-# Set environment variable for native LangChain/CrewAI detection
 os.environ["GROQ_API_KEY"] = groq_api_key
 
-
-# ==============================================================================
-# HELPER FUNCTIONS
-# ==============================================================================
 def extract_text_from_pdf(uploaded_file) -> str:
-    """Extracts raw text safely from an uploaded PDF file."""
     try:
         reader = PdfReader(uploaded_file)
         text = ""
@@ -46,11 +29,7 @@ def extract_text_from_pdf(uploaded_file) -> str:
         st.error(f"Failed to extract text from PDF: {str(e)}")
         return ""
 
-
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    """Configures CrewAI Agent with native Groq LLM integration."""
-    
-    # Use CrewAI's native LLM class instead of ChatGroq
     llm = LLM(
         model="groq/openai/gpt-oss-120b",
         api_key=groq_api_key,
@@ -59,15 +38,74 @@ def run_resume_review(resume_text: str, job_description: str) -> str:
 
     resume_evaluator = Agent(
         role="Senior Executive Technical Recruiter & Resume Auditor",
-        goal="Accurately evaluate resume alignment against job descriptions and provide targeted, zero-hallucination feedback.",
+        goal="Accurately evaluate resume alignment against job descriptions.",
         backstory=(
-            "You are a seasoned talent acquisition strategist with over 15 years of experience evaluating candidate resumes. "
-            "You are meticulous, strictly factual, and honest. You never fabricate skills, certifications, or experiences "
-            "that are not explicitly present in the candidate's provided text."
+            "You are a seasoned recruiter. You never fabricate skills or experiences "
+            "not explicitly present in the candidate's resume."
         ),
         verbose=False,
         allow_delegation=False,
         llm=llm
+    )
+
+    review_task = Task(
+        description=(
+            "Carefully analyze the Candidate Resume against the Target Job Description below.\n\n"
+            "=== CANDIDATE RESUME ===\n{resume}\n\n"
+            "=== TARGET JOB DESCRIPTION ===\n{job_description}\n"
+        ),
+        expected_output="A structured report in Markdown format with scores, matching skills, gaps, and recommendations.",
+        agent=resume_evaluator
+    )
+
+    crew = Crew(agents=[resume_evaluator], tasks=[review_task], process=Process.sequential)
+    return str(crew.kickoff(inputs={"resume": resume_text, "job_description": job_description}))
+
+# ==============================================================================
+# UI INPUT FORM
+# ==============================================================================
+col1, col2 = st.columns(2)
+
+resume_content = ""
+
+with col1:
+    st.subheader("1. Candidate Resume")
+    input_method = st.radio("Choose input method:", ["Upload PDF", "Paste Text"], horizontal=True)
+    
+    if input_method == "Upload PDF":
+        uploaded_pdf = st.file_uploader("Upload PDF Resume", type=["pdf"])
+        if uploaded_pdf is not None:
+            # Extract PDF text synchronously so it persists across reruns
+            resume_content = extract_text_from_pdf(uploaded_pdf)
+            if resume_content:
+                st.success("PDF loaded successfully!")
+                with st.expander("Preview Extracted Resume Text"):
+                    st.text(resume_content[:1000] + "..." if len(resume_content) > 1000 else resume_content)
+            else:
+                st.error("Could not extract any readable text from this PDF. It might be a scanned image or protected.")
+    else:
+        resume_content = st.text_area("Paste Resume Text here:", height=300)
+
+with col2:
+    st.subheader("2. Target Job Description")
+    job_desc_content = st.text_area("Paste Job Description here:", height=350)
+
+st.divider()
+
+if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_width=True):
+    # Validation checks
+    if not resume_content or not resume_content.strip():
+        st.warning("⚠️ Please provide a valid resume (either upload a readable PDF or paste text).")
+    elif not job_desc_content or not job_desc_content.strip():
+        st.warning("⚠️ Please paste the target job description.")
+    else:
+        with st.spinner("🤖 Agent is analyzing your resume..."):
+            try:
+                review_report = run_resume_review(resume_content, job_desc_content)
+                st.subheader("📋 Audit Report")
+                st.markdown(review_report)
+            except Exception as e:
+                st.error(f"Execution error: {str(e)}")
     )
 
     # 2. Evaluation Task definition with structured output constraints
