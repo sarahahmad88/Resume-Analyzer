@@ -6,12 +6,14 @@ import litellm
 from pypdf import PdfReader
 from crewai import LLM, Agent, Task, Crew, Process
 
-# Global LiteLLM configuration to drop unsupported backend parameters
+# ==============================================================================
+# LITELLM / GROQ COMPATIBILITY SETTINGS
+# ==============================================================================
+# Force LiteLLM to drop any unhandled parameters (like cache_breakpoint) globally
 litellm.drop_params = True
+litellm.modify_params = True  # Drops params unsupported by target provider
 
-# ==============================================================================
-# PAGE CONFIGURATION & STYLING
-# ==============================================================================
+# Page Config
 st.set_page_config(
     page_title="AI Resume Reviewer",
     page_icon="📄",
@@ -21,9 +23,7 @@ st.set_page_config(
 st.title("📄 AI Resume Review & Optimization Agent")
 st.caption("Powered by CrewAI, Groq & OCR")
 
-# ==============================================================================
-# SECURE API KEY INITIALIZATION
-# ==============================================================================
+# API Key Handling
 groq_api_key = st.secrets.get("GROQ_API_KEY") if "GROQ_API_KEY" in st.secrets else os.getenv("GROQ_API_KEY")
 
 if not groq_api_key:
@@ -33,21 +33,13 @@ if not groq_api_key:
 os.environ["GROQ_API_KEY"] = groq_api_key
 
 
-# ==============================================================================
-# HYBRID PDF & OCR TEXT EXTRACTION
-# ==============================================================================
 def extract_text_from_pdf(uploaded_file) -> str:
-    """
-    Extracts text from PDF.
-    First tries fast standard extraction with PyPDF.
-    If no text is found (e.g., scanned PDF), falls back to Tesseract OCR.
-    """
     file_bytes = uploaded_file.read()
-    uploaded_file.seek(0)  # Reset stream position
+    uploaded_file.seek(0)
     
     extracted_text = ""
     
-    # 1. Try standard text extraction
+    # 1. Standard text extraction
     try:
         reader = PdfReader(uploaded_file)
         for page in reader.pages:
@@ -58,10 +50,10 @@ def extract_text_from_pdf(uploaded_file) -> str:
     except Exception as e:
         st.warning(f"Standard PDF reading issue: {str(e)}. Attempting OCR...")
 
-    # 2. Fall back to OCR if standard extraction yields nothing
+    # 2. OCR Fallback
     if not extracted_text:
         try:
-            with st.spinner("🔍 Scanned/image PDF detected. Running OCR..."):
+            with st.spinner("🔍 Scanned PDF detected. Running OCR..."):
                 images = convert_from_bytes(file_bytes)
                 ocr_text_list = []
                 for image in images:
@@ -72,7 +64,7 @@ def extract_text_from_pdf(uploaded_file) -> str:
         except Exception as ocr_err:
             st.error(
                 "OCR extraction failed. Ensure 'tesseract-ocr' and 'poppler-utils' "
-                f"are installed on your host environment. Error: {str(ocr_err)}"
+                f"are installed. Error: {str(ocr_err)}"
             )
             return ""
 
@@ -80,13 +72,11 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    """Configures CrewAI Agent & Task to evaluate resume against target job description."""
-    
+    # Explicitly configure Groq model via LiteLLM standard naming
     llm = LLM(
-        model="groq/openai/gpt-oss-120b",
+        model="groq/llama-3.3-70b-versatile",  # Clean Groq native model string
         api_key=groq_api_key,
         temperature=0.2,
-        drop_params=True
     )
 
     resume_evaluator = Agent(
@@ -123,11 +113,8 @@ def run_resume_review(resume_text: str, job_description: str) -> str:
     return str(crew.kickoff(inputs={"resume": resume_text, "job_description": job_description}))
 
 
-# ==============================================================================
-# USER INTERFACE (STREAMLIT)
-# ==============================================================================
+# Streamlit UI
 col1, col2 = st.columns(2)
-
 resume_content = ""
 
 with col1:
@@ -153,10 +140,9 @@ with col2:
 
 st.divider()
 
-# Analyze Button
 if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_width=True):
     if not resume_content or not resume_content.strip():
-        st.warning("⚠️ Please provide a valid resume (either upload a readable PDF or paste text).")
+        st.warning("⚠️ Please provide a valid resume.")
     elif not job_desc_content or not job_desc_content.strip():
         st.warning("⚠️ Please paste the target job description.")
     else:
