@@ -1,6 +1,8 @@
 import os
 import streamlit as st
 from pypdf import PdfReader
+from pdf2image import convert_from_bytes
+import pytesseract
 from crewai import LLM, Agent, Task, Crew, Process
 
 # ==============================================================================
@@ -13,7 +15,7 @@ st.set_page_config(
 )
 
 st.title("📄 AI Resume Review & Optimization Agent")
-st.caption("Powered by CrewAI & Groq (GPT OSS 120B)")
+st.caption("Powered by CrewAI, Groq (GPT OSS 120B) & OCR")
 
 # ==============================================================================
 # SECURE API KEY INITIALIZATION
@@ -28,21 +30,49 @@ os.environ["GROQ_API_KEY"] = groq_api_key
 
 
 # ==============================================================================
-# HELPER FUNCTIONS
+# HYBRID PDF & OCR TEXT EXTRACTION
 # ==============================================================================
 def extract_text_from_pdf(uploaded_file) -> str:
-    """Extracts raw text safely from an uploaded PDF file."""
+    """
+    Extracts text from PDF.
+    First tries fast standard extraction with PyPDF.
+    If no text is found (e.g., scanned PDF), falls back to Tesseract OCR.
+    """
+    file_bytes = uploaded_file.read()
+    uploaded_file.seek(0)  # Reset stream position
+    
+    extracted_text = ""
+    
+    # 1. Try standard text extraction
     try:
         reader = PdfReader(uploaded_file)
-        text = ""
         for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
-        return text.strip()
+            text = page.extract_text()
+            if text:
+                extracted_text += text + "\n"
+        extracted_text = extracted_text.strip()
     except Exception as e:
-        st.error(f"Failed to extract text from PDF: {str(e)}")
-        return ""
+        st.warning(f"Standard PDF reading issue: {str(e)}. Attempting OCR...")
+
+    # 2. Fall back to OCR if standard extraction yields nothing
+    if not extracted_text:
+        try:
+            with st.spinner("🔍 Scanned/image PDF detected. Running OCR (Optical Character Recognition)..."):
+                images = convert_from_bytes(file_bytes)
+                ocr_text_list = []
+                for i, image in enumerate(images):
+                    text = pytesseract.image_to_string(image)
+                    if text.strip():
+                        ocr_text_list.append(text.strip())
+                extracted_text = "\n\n".join(ocr_text_list)
+        except Exception as ocr_err:
+            st.error(
+                "OCR extraction failed. Ensure 'tesseract-ocr' and 'poppler-utils' "
+                f"are installed on your system. Error details: {str(ocr_err)}"
+            )
+            return ""
+
+    return extracted_text
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
@@ -121,11 +151,11 @@ with col1:
         if uploaded_pdf is not None:
             resume_content = extract_text_from_pdf(uploaded_pdf)
             if resume_content:
-                st.success("PDF loaded successfully!")
+                st.success("PDF text extracted successfully!")
                 with st.expander("Preview Extracted Resume Text"):
                     st.text(resume_content[:1000] + "..." if len(resume_content) > 1000 else resume_content)
             else:
-                st.error("Could not extract text from this PDF. It might be scanned or image-based.")
+                st.error("Could not extract readable text even with OCR. Please try pasting the text manually.")
     else:
         resume_content = st.text_area("Paste Resume Text here:", height=300)
 
