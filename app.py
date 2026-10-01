@@ -9,9 +9,8 @@ from crewai import LLM, Agent, Task, Crew, Process
 # ==============================================================================
 # LITELLM & GROQ COMPATIBILITY FIXES
 # ==============================================================================
-# Force LiteLLM to drop unsupported parameters (like cache_breakpoint) automatically
+# Global LiteLLM configuration to drop unsupported backend parameters
 litellm.drop_params = True
-os.environ["LITELLM_DROP_PARAMS"] = "True"
 
 # ==============================================================================
 # PAGE CONFIGURATION & STYLING
@@ -84,9 +83,9 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    """Configures CrewAI Agent & Task with Groq compatibility parameters."""
+    """Configures CrewAI Agent & Task using LiteLLM parameter stripping."""
     
-    # Initialize LLM with explicit parameter dropping enabled
+    # Pass model with drop_params enabled
     llm = LLM(
         model="groq/openai/gpt-oss-120b",
         api_key=groq_api_key,
@@ -94,54 +93,30 @@ def run_resume_review(resume_text: str, job_description: str) -> str:
         drop_params=True
     )
 
-    # 1. Define Agent
     resume_evaluator = Agent(
         role="Senior Executive Technical Recruiter & Resume Auditor",
-        goal="Accurately evaluate resume alignment against job descriptions and provide targeted, zero-hallucination feedback.",
+        goal="Accurately evaluate resume alignment against job descriptions.",
         backstory=(
             "You are a seasoned talent acquisition strategist with over 15 years of experience evaluating candidate resumes. "
-            "You are meticulous, strictly factual, and honest. You never fabricate skills, certifications, or experiences "
-            "that are not explicitly present in the candidate's provided text. Your advice is concise, structured, and actionable."
+            "You are meticulous, strictly factual, and honest."
         ),
         verbose=False,
         allow_delegation=False,
         llm=llm
     )
 
-    # 2. Define Evaluation Task
     review_task = Task(
         description=(
-            "Carefully analyze the Candidate Resume against the Target Job Description below.\n\n"
+            "Analyze the candidate resume against the job description strictly based on provided text.\n\n"
             "=== CANDIDATE RESUME ===\n{resume}\n\n"
-            "=== TARGET JOB DESCRIPTION ===\n{job_description}\n\n"
-            "Your evaluation MUST adhere strictly to the following rules:\n"
-            "1. DO NOT assume or invent skills/experiences not explicitly mentioned in the resume.\n"
-            "2. Identify clear structural, technical, and keywords missing from the candidate's resume relative to the target role.\n"
-            "3. Format the final output clearly using clean Markdown sections."
+            "=== TARGET JOB DESCRIPTION ===\n{job_description}"
         ),
-        expected_output=(
-            "A structured report in Markdown format containing:\n"
-            "## 🎯 Match Overview & Overall Score (0-100%)\n"
-            "- Concise explanation of candidate fit\n\n"
-            "## ✅ Key Strengths & Matching Qualifications\n"
-            "- Bullet points highlighting explicit matches found in the resume\n\n"
-            "## ⚠️ Missing Skills & Requirements Gaps\n"
-            "- Critical requirements in the job description that are missing or weak in the resume\n\n"
-            "## 💡 Actionable Improvement Recommendations\n"
-            "- 3 to 5 specific, step-by-step revisions to optimize ATS readability and job alignment"
-        ),
+        expected_output="A structured report in Markdown format with scores, matches, missing skills, and recommendations.",
         agent=resume_evaluator
     )
 
-    # 3. Instantiate and run Crew
-    crew = Crew(
-        agents=[resume_evaluator],
-        tasks=[review_task],
-        process=Process.sequential
-    )
-
-    result = crew.kickoff(inputs={"resume": resume_text, "job_description": job_description})
-    return str(result)
+    crew = Crew(agents=[resume_evaluator], tasks=[review_task], process=Process.sequential)
+    return str(crew.kickoff(inputs={"resume": resume_text, "job_description": job_description}))
 
 
 # ==============================================================================
