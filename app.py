@@ -1,8 +1,7 @@
 import os
 import streamlit as st
 from pypdf import PdfReader
-from langchain_groq import ChatGroq
-from crewai import Agent, Task, Crew, Process
+from crewai import LLM, Agent, Task, Crew, Process
 
 # ==============================================================================
 # PAGE CONFIGURATION & STYLING
@@ -49,23 +48,22 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    """Configures CrewAI Agent with GPT OSS 120B and executes evaluation workflow."""
+    """Configures CrewAI Agent with native Groq LLM integration."""
     
-    # Initialize Groq LLM model
-    llm = ChatGroq(
-        model_name="openai/gpt-oss-120b",
-        groq_api_key=groq_api_key,
+    # Use CrewAI's native LLM class instead of ChatGroq
+    llm = LLM(
+        model="groq/openai/gpt-oss-120b",
+        api_key=groq_api_key,
         temperature=0.2
     )
 
-    # 1. Single Agent definition with strict factual backstory guarding against fabrication
     resume_evaluator = Agent(
         role="Senior Executive Technical Recruiter & Resume Auditor",
         goal="Accurately evaluate resume alignment against job descriptions and provide targeted, zero-hallucination feedback.",
         backstory=(
             "You are a seasoned talent acquisition strategist with over 15 years of experience evaluating candidate resumes. "
             "You are meticulous, strictly factual, and honest. You never fabricate skills, certifications, or experiences "
-            "that are not explicitly present in the candidate's provided text. Your advice is concise, structured, and actionable."
+            "that are not explicitly present in the candidate's provided text."
         ),
         verbose=False,
         allow_delegation=False,
