@@ -1,4 +1,6 @@
 import os
+import pytesseract
+from pdf2image import convert_from_bytes
 import streamlit as st
 import litellm
 from pypdf import PdfReader
@@ -17,7 +19,7 @@ st.set_page_config(
 )
 
 st.title("📄 AI Resume Review & Optimization Agent")
-st.caption("Powered by CrewAI, Groq (GPT OSS 120B) & OCR")
+st.caption("Powered by CrewAI, Groq & OCR")
 
 # ==============================================================================
 # SECURE API KEY INITIALIZATION
@@ -70,7 +72,7 @@ def extract_text_from_pdf(uploaded_file) -> str:
         except Exception as ocr_err:
             st.error(
                 "OCR extraction failed. Ensure 'tesseract-ocr' and 'poppler-utils' "
-                f"are installed. Error: {str(ocr_err)}"
+                f"are installed on your host environment. Error: {str(ocr_err)}"
             )
             return ""
 
@@ -78,9 +80,8 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    """Configures CrewAI Agent & Task using LiteLLM parameter stripping."""
+    """Configures CrewAI Agent & Task to evaluate resume against target job description."""
     
-    # Pass model with drop_params enabled
     llm = LLM(
         model="groq/openai/gpt-oss-120b",
         api_key=groq_api_key,
@@ -90,10 +91,11 @@ def run_resume_review(resume_text: str, job_description: str) -> str:
 
     resume_evaluator = Agent(
         role="Senior Executive Technical Recruiter & Resume Auditor",
-        goal="Accurately evaluate resume alignment against job descriptions.",
+        goal="Provide an accurate, honest evaluation of resume alignment without inventing unmentioned candidate qualifications.",
         backstory=(
-            "You are a seasoned talent acquisition strategist with over 15 years of experience evaluating candidate resumes. "
-            "You are meticulous, strictly factual, and honest."
+            "You are a seasoned talent acquisition strategist with over 15 years of technical hiring experience. "
+            "You are meticulous, strictly factual, and honest. You never assume or extrapolate skills that are "
+            "not explicitly listed on the candidate's resume."
         ),
         verbose=False,
         allow_delegation=False,
@@ -102,11 +104,18 @@ def run_resume_review(resume_text: str, job_description: str) -> str:
 
     review_task = Task(
         description=(
-            "Analyze the candidate resume against the job description strictly based on provided text.\n\n"
+            "Analyze the candidate's resume against the target job description based EXCLUSIVELY on the provided text.\n"
+            "CRITICAL CONSTRAINT: Do NOT invent, assume, or fabricate any experience or qualifications that are not explicitly in the resume.\n\n"
             "=== CANDIDATE RESUME ===\n{resume}\n\n"
             "=== TARGET JOB DESCRIPTION ===\n{job_description}"
         ),
-        expected_output="A structured report in Markdown format with scores, matches, missing skills, and recommendations.",
+        expected_output=(
+            "A structured Markdown report including:\n"
+            "1. **Overall Match Score** (Percentage 0-100% with brief justification)\n"
+            "2. **Matching Core Competencies** (Strengths explicitly present in both)\n"
+            "3. **Missing or Unmentioned Requirements** (Gaps found relative to the job description)\n"
+            "4. **Actionable Recommendations** (Concrete advice on how to emphasize existing experience or address gaps without falsifying information)"
+        ),
         agent=resume_evaluator
     )
 
@@ -151,7 +160,7 @@ if st.button("🔍 Analyze Resume Alignment", type="primary", use_container_widt
     elif not job_desc_content or not job_desc_content.strip():
         st.warning("⚠️ Please paste the target job description.")
     else:
-        with st.spinner("🤖 Agent is analyzing your resume with GPT OSS 120B..."):
+        with st.spinner("🤖 Agent is analyzing your resume alignment..."):
             try:
                 review_report = run_resume_review(resume_content, job_desc_content)
                 st.subheader("📋 Audit Report")
