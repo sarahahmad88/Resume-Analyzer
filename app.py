@@ -3,7 +3,15 @@ import streamlit as st
 from pypdf import PdfReader
 from pdf2image import convert_from_bytes
 import pytesseract
+import litellm
 from crewai import LLM, Agent, Task, Crew, Process
+
+# ==============================================================================
+# LITELLM & GROQ COMPATIBILITY FIXES
+# ==============================================================================
+# Force LiteLLM to drop unsupported parameters (like cache_breakpoint) automatically
+litellm.drop_params = True
+os.environ["LITELLM_DROP_PARAMS"] = "True"
 
 # ==============================================================================
 # PAGE CONFIGURATION & STYLING
@@ -57,10 +65,10 @@ def extract_text_from_pdf(uploaded_file) -> str:
     # 2. Fall back to OCR if standard extraction yields nothing
     if not extracted_text:
         try:
-            with st.spinner("🔍 Scanned/image PDF detected. Running OCR (Optical Character Recognition)..."):
+            with st.spinner("🔍 Scanned/image PDF detected. Running OCR..."):
                 images = convert_from_bytes(file_bytes)
                 ocr_text_list = []
-                for i, image in enumerate(images):
+                for image in images:
                     text = pytesseract.image_to_string(image)
                     if text.strip():
                         ocr_text_list.append(text.strip())
@@ -68,7 +76,7 @@ def extract_text_from_pdf(uploaded_file) -> str:
         except Exception as ocr_err:
             st.error(
                 "OCR extraction failed. Ensure 'tesseract-ocr' and 'poppler-utils' "
-                f"are installed on your system. Error details: {str(ocr_err)}"
+                f"are installed. Error: {str(ocr_err)}"
             )
             return ""
 
@@ -76,14 +84,14 @@ def extract_text_from_pdf(uploaded_file) -> str:
 
 
 def run_resume_review(resume_text: str, job_description: str) -> str:
-    """Configures CrewAI Agent & Task, and executes evaluation workflow."""
+    """Configures CrewAI Agent & Task with Groq compatibility parameters."""
     
-    # Configure CrewAI LLM with drop_params to ignore unsupported parameters on Groq
+    # Initialize LLM with explicit parameter dropping enabled
     llm = LLM(
         model="groq/openai/gpt-oss-120b",
         api_key=groq_api_key,
         temperature=0.2,
-        drop_params=True  # Automatically removes cache_breakpoint & unsupported Groq params
+        drop_params=True
     )
 
     # 1. Define Agent
@@ -156,7 +164,7 @@ with col1:
                 with st.expander("Preview Extracted Resume Text"):
                     st.text(resume_content[:1000] + "..." if len(resume_content) > 1000 else resume_content)
             else:
-                st.error("Could not extract readable text even with OCR. Please try pasting the text manually.")
+                st.error("Could not extract readable text even with OCR. Please try pasting text manually.")
     else:
         resume_content = st.text_area("Paste Resume Text here:", height=300)
 
