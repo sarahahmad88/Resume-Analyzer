@@ -1,73 +1,46 @@
-# 📄 AI Resume Reviewer Agent
+# AI Resume Reviewer
 
-A beginner-friendly, single-agent application built using **CrewAI**, **Streamlit**, and **Groq** (`openai/gpt-oss-120b`). This tool evaluates how well a candidate's resume matches a target job description without fabricating unmentioned qualifications.
+Requires Python 3.10 or newer.
 
----
-
-## 📁 Repository Structure
-
-```text
-resume-analyzer/
-├── app.py
-├── requirements.txt
-├── README.md
-└── .streamlit/
-    └── secrets.toml
-```
-
----
-
-## 🚀 Local Setup & Installation
-
-### 1. Prerequisites
-- Python **3.11** installed.
-- A free API key from [Groq Console](https://console.groq.com/).
-
-### 2. Installation
-1. Clone or download this repository.
-2. Open your terminal in the project directory.
-3. Create a virtual environment and activate it:
-   ```bash
-   python -m venv venv
-   # On Windows:
-   venv\Scripts\activate
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
-4. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### 3. Configure API Key
-Create a `.streamlit/secrets.toml` file in the root directory:
-```toml
-GROQ_API_KEY = "gsk_your_actual_groq_api_key_here"
-```
-
-### 4. Run the Application
 ```bash
+python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
----
+Before starting, create `.streamlit/secrets.toml`:
 
-## ☁️ Deploying to Streamlit Community Cloud
+```toml
+GROQ_API_KEY = "your-groq-api-key"
+# Optional provider model ID (no groq/ prefix):
+GROQ_MODEL = "openai/gpt-oss-120b"
+```
 
-1. **Push your code to GitHub:**
-   - Initialize git and commit `app.py`, `requirements.txt`, and `README.md`.
-   - **DO NOT** commit `.streamlit/secrets.toml`.
+Alternatively set GROQ_API_KEY and optionally GROQ_MODEL as environment variables.
+Never commit the secrets file. On Streamlit Community Cloud add these settings
+through the app's Secrets settings. Put app.py, requirements.txt and packages.txt
+in the repository root. packages.txt installs the OCR system dependencies there.
 
-2. **Deploy on Streamlit:**
-   - Go to [share.streamlit.io](https://share.streamlit.io) and log in.
-   - Click **New App**, select your GitHub repository and branch (`main`).
-   - Set **Main file path** to `app.py`.
-   - Ensure the Python version is set to **3.11**.
+For local Ubuntu/Debian OCR support:
 
-3. **Add Secrets on Streamlit Cloud:**
-   - Expand **Advanced Settings...**
-   - In the **Secrets** box, paste:
-     ```toml
-     GROQ_API_KEY = "gsk_your_actual_groq_api_key_here"
-     ```
-   - Click **Deploy**.
+```bash
+sudo apt-get update
+sudo apt-get install tesseract-ocr poppler-utils
+```
+
+On Windows or macOS install Tesseract and Poppler separately and make their
+executables available on PATH. Default OCR language is English. Pasted text and
+PDFs with readable text layers do not require these system programs.
+
+This implementation intentionally replaces CrewAI/LiteLLM with Groq's official
+SDK for the single review task. It sends only role and content in each message,
+so the unsupported cache_breakpoint property is never introduced. The SDK model
+ID is openai/gpt-oss-120b, not groq/openai/gpt-oss-120b.
+
+PDFs are limited to 10 MB and 20 pages. Combined review input is limited to
+40,000 characters; account-specific Groq token quotas may require shorter inputs.
+OCR runs only for pages with no extracted text. Inspect the preview: sparse or
+corrupted text layers may require manually pasting corrected text.
+
+Reports persist during widget reruns and clear when the input or model changes.
+Resume data is sent to Groq when Analyze is clicked. Match scores are qualitative
+model estimates and should be checked against the quoted resume evidence.
